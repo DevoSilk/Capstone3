@@ -5,7 +5,11 @@ __pycache__/
 *.csv
 *.pkl
 *.pkl_1
-
+beers.csv
+reviews.csv
+breweries.csv
+algo.pkl
+algo.pkl_1
 # C extensions
 *.so
 
