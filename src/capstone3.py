@@ -23,41 +23,44 @@ from scipy import spatial
 
 import matplotlib.pyplot as plt
 import seaborn as sns
-#matplotlib inline
+
 import warnings
 warnings.filterwarnings("ignore")
 
-#loading in data
-beers = pd.read_csv('~/den-19/capstone3/data/beers.csv')
-#print(beers.columns)
+
+
+
+#loading in our various data and beginning to look at it
+beers = pd.read_csv('~/Desktop/Capstone3.2/Capstone3/data/beers.csv')
 beers_1= beers[['id', 'name', 'brewery_id', 'style']]
 beers_1 = beers_1.rename(columns= {'id':'beer_id', 'name':'beer_name'})
 beers_1= beers_1.sort_values(['beer_id'], ascending=True)
-#print(beers_1.head(10))
 
-reviews = pd.read_csv('~/den-19/capstone3/data/reviews.csv')
-#print(reviews.columns)
+
+reviews = pd.read_csv('~/Desktop/Capstone3.2/Capstone3/data/reviews.csv')
 reviews_1 = reviews[['beer_id', 'username', 'look','smell', 
-            'taste','feel', 'overall', 'score']].sort_values(['beer_id'], ascending=True)
+                    'taste','feel', 'overall', 'score']].sort_values(['beer_id'],
+                     ascending=True)
 reviews_1 = reviews_1.reset_index()
 reviews_1 = reviews_1.fillna(0)
 reviews_1 = reviews_1.drop(['index'], axis = 1)
-#print(reviews_1.head(10))
 
 
-brewery = pd.read_csv('~/den-19/capstone3/data/breweries.csv')
-#print(brewery.columns)
+brewery = pd.read_csv('~/Desktop/Capstone3.2/Capstone3/data/breweries.csv')
 brewery_1 = brewery[['id', 'name']]
 brewery_1 = brewery_1.rename(columns={'id':'brewery_id', 'name':'brewery_name'})
 brewery_1 = brewery_1.sort_values(['brewery_id'])
-#print(brewery_1.head(10))
 
 
-#combine the databases to get what we need, then re-id both the beers and users
+#combining the databases to get what we need, 
+# then re-ID-ing both the beers and users.
+#Doing it twice for sake of ease
 
-both= pd.merge(brewery_1, beers_1[['brewery_id', 'style','beer_name', 'beer_id']], on= 'brewery_id')
+both= pd.merge(brewery_1, beers_1[['brewery_id', 'style','beer_name', 'beer_id']], 
+               on= 'brewery_id')
 
-all_three = pd.merge(reviews_1, both[['beer_name', 'brewery_name', 'style', 'beer_id']], on = 'beer_id')
+all_three = pd.merge(reviews_1, both[['beer_name', 'brewery_name', 'style', 'beer_id']],
+                     on = 'beer_id')
 #still a little cleaning up to do
 all_three_1 = all_three[['username', 'score', 'beer_name', 'brewery_name', 'style']]
 
@@ -66,18 +69,16 @@ all_three_1 = all_three[['username', 'score', 'beer_name', 'brewery_name', 'styl
 #we're going to round down to 4.0 as our threshold of recommendation
 
 #we're going to plot a couple of things
+# This plot is number of reviews against numbers of beers
 data = all_three_1.beer_name.value_counts()
 sns.set_context('talk')
 sns.set_style('darkgrid')
 plt.figure(figsize=(10,10))
 ax= sns.histplot(data, bins= 50, kde=False, color='red', alpha=.5, log_scale= (True,True))
-#second_ax = ax.twinx()
-#sns.distplot(data, ax=second_ax, kde=True, hist=False)
-#second_ax.set_yticks([])
 
 ax.set_xlabel('Review Counts')
 ax.set_ylabel('Num. of Beers')
-ax.set_title('Histogram of Reivew Counts')
+ax.set_title('Histogram of Reivews')
 
 #now to find out where the beers fall and get rid of the low hanging fruit
 grouped_beers = all_three_1.groupby('beer_name')
@@ -90,11 +91,8 @@ avg_score = grouped_beers.mean()
 below_avg = avg_score['score'] < 4.0
 below_avg_count = len(avg_score[below_avg])
 
-print('{} beers have an average score below 4.0'.format(below_avg_count))
-print('A sub 4.0 avg score puts the beer within the bottom 70th percentile')
-
-#bottom_20percent_rating = grouped_beers.mean().quantile(np.arange(0,.21,.02))
-#bottom_20percent_counts = grouped_beers.count().quantile(np.arange(0,.21,.02))
+#print('{} beers have an average score below 4.0'.format(below_avg_count))
+#print('A sub 4.0 avg score puts the beer within the bottom 70th percentile')
 
 #another plot, this one of user counts
 data2 = all_three_1.username.value_counts()
@@ -198,6 +196,8 @@ def read_item_name():
     
 
 
+#This first one is set to compute the cosine distance
+
 def get_recommendation(beer_name, k_):
     
     '''
@@ -232,34 +232,187 @@ def get_recommendation(beer_name, k_):
 
     return output
 
-
-
-#train the algorithm to compute the similarities bewteen items
+#This would compute the cosine distance
 reader= Reader(rating_scale=(1,5))
 data= Dataset.load_from_df(all_three_2[['userID', 'beerID', 'score']],reader)
 trainset, testset = train_test_split(data, test_size = .20)
 
 trainset = data.build_full_trainset()
-sim_options = {'name':'pearson_baseline', 'user_based': False}
+sim_options = {'name':'cosine', 'user_based': False}
 algo= KNNBaseline(sim_options = sim_options)
 algo.fit(trainset)
 predictions = algo.test(testset)
 accuracy.rmse(predictions)
 
 
-with open('algo.pkl', 'wb') as f:
-    pickle.dump(algo, f)
+#this is the function that will use Pearson-baseline
+
+def get_recommendation1(beer_name, k_):
+    
+    '''
+    input a beer and get k-num recommendations
+       that are based on similarity
+
+       input = string, int
+       output = string
+    ''' 
+
+    output = []
+    beer = str(beer_name)
+    
+    #read the maps raw id -->beer name, and vice versa
+    raw_id_to_name, name_to_raw_id = read_item_name()
+
+    #get the inner id of the beer
+    beer_input_raw_id = name_to_raw_id[beer]
+    beer_input_inner_id = algo1.trainset.to_inner_iid(beer_input_raw_id)
+
+    K = k_
+
+    #get the inner ids of the nearest neighbors of the beer
+    beer_input_near_neigh = algo1.get_neighbors(beer_input_inner_id, k=K)
+
+    beer_input_near_neigh = (algo1.trainset.to_raw_iid(inner_id) for inner_id in beer_input_near_neigh)
+
+    beer_input_near_neigh = (raw_id_to_name[rid] for rid in beer_input_near_neigh)
+
+    for beer_ in beer_input_near_neigh:
+        output.append(beer_)
+
+    return output
+
+#This is for the pearson-baseline
+reader= Reader(rating_scale=(1,5))
+data= Dataset.load_from_df(all_three_2[['userID', 'beerID', 'score']],reader)
+trainset, testset = train_test_split(data, test_size = .20)
+
+trainset = data.build_full_trainset()
+sim_options = {'name':'pearson_baseline', 'user_based': False}
+algo1= KNNBaseline(sim_options = sim_options)
+algo1.fit(trainset)
+predictions1 = algo1.test(testset)
+accuracy.rmse(predictions1)
 
 
-with open('algo.pkl', 'rb') as m:
-    algo_model = pickle.load(m)
 
-algo_model.test(testset)
+
+#this one will use KNN with MSD
+
+def get_recommendation2(beer_name, k_):
+    
+    '''
+    input a beer and get k-num recommendations
+       that are based on similarity
+
+       input = string, int
+       output = string
+    ''' 
+
+    output = []
+    beer = str(beer_name)
+    
+    #read the maps raw id -->beer name, and vice versa
+    raw_id_to_name, name_to_raw_id = read_item_name()
+
+    #get the inner id of the beer
+    beer_input_raw_id = name_to_raw_id[beer]
+    beer_input_inner_id = algo2.trainset.to_inner_iid(beer_input_raw_id)
+
+    K = k_
+
+    #get the inner ids of the nearest neighbors of the beer
+    beer_input_near_neigh = algo2.get_neighbors(beer_input_inner_id, k=K)
+
+    beer_input_near_neigh = (algo2.trainset.to_raw_iid(inner_id) for inner_id in beer_input_near_neigh)
+
+    beer_input_near_neigh = (raw_id_to_name[rid] for rid in beer_input_near_neigh)
+
+    for beer_ in beer_input_near_neigh:
+        output.append(beer_)
+
+    return output
+
+
+#This one is knn- msd
+reader= Reader(rating_scale=(1,5))
+data= Dataset.load_from_df(all_three_2[['userID', 'beerID', 'score']],reader)
+trainset, testset = train_test_split(data, test_size = .20)
+
+trainset = data.build_full_trainset()
+sim_options = {'name':'msd', 'user_based': False}
+algo2= KNNBaseline(sim_options = sim_options)
+algo2.fit(trainset)
+predictions2 = algo2.test(testset)
+accuracy.rmse(predictions2)
+
+
+
+
+################
+#This one will use KNN Basic model
+
+# def get_recommendation3(beer_name, k_):
+    
+#     '''
+#     input a beer and get k-num recommendations
+#        that are based on similarity
+
+#        input = string, int
+#        output = string
+#     ''' 
+
+#     output = []
+#     beer = str(beer_name)
+    
+#     #read the maps raw id -->beer name, and vice versa
+#     raw_id_to_name, name_to_raw_id = read_item_name()
+
+#     #get the inner id of the beer
+#     beer_input_raw_id = name_to_raw_id[beer]
+#     beer_input_inner_id = algo2.trainset.to_inner_iid(beer_input_raw_id)
+
+#     K = k_
+
+#     #get the inner ids of the nearest neighbors of the beer
+#     beer_input_near_neigh = algo2.get_neighbors(beer_input_inner_id, k=K)
+
+#     beer_input_near_neigh = (algo2.trainset.to_raw_iid(inner_id) for inner_id in beer_input_near_neigh)
+
+#     beer_input_near_neigh = (raw_id_to_name[rid] for rid in beer_input_near_neigh)
+
+#     for beer_ in beer_input_near_neigh:
+#         output.append(beer_)
+
+#     return output
+
+
+# reader= Reader(rating_scale=(1,5))
+# data= Dataset.load_from_df(all_three_2[['userID', 'beerID', 'score']],reader)
+# trainset, testset = train_test_split(data, test_size = .20)
+
+# trainset = data.build_full_trainset()
+# sim_options = {'name':'pearson_baseline', 'user_based': False}
+# algo3= KNNBaseline(sim_options = sim_options)
+# algo3.fit(trainset)
+# predictions3 = algo3.test(testset)
+# accuracy.rmse(predictions3)
+
+
+
+#This would save the model
+
+# with open('algo.pkl', 'wb') as f:
+#     pickle.dump(algo, f)
+
+#This would open the model that we saved
+
+# with open('algo.pkl', 'rb') as m:
+#     algo_model = pickle.load(m)
+
+
 
 ############
 
-#This evaluates the performance using Surprise's evaluation module, but couldn't get it to import
-#evaluate(algo, data, measures = ['RMSE', 'MAE'])
 
 #top 20 most rated beers
 grouped_beer_names = all_three_2.groupby('beer_name')
@@ -268,31 +421,66 @@ grouped_beer_names.count().sort_values(by='username', ascending= False)[0:20].in
 # #top 20 highest rated beers
 grouped_beer_names.mean().sort_values(by='score', ascending = False)[0:20].index.tolist()
 
-
-print('The 20 nearest neighbors of Heady Topper are:')
-print(get_recommendation('Heady Topper',20 ))
+#This is to show the top 20 recommendations for the beer based on the different models
+print('The 15 nearest neighbors of Heady Topper are:')
+print(get_recommendation('Heady Topper', 5))
+print(get_recommendation1('Heady Topper', 5))
+print(get_recommendation2('Heady Topper', 5))
+#print(get_recommendation3('Heady Topper', 20))
 
 
 # print('The 20 nearest neighbor to 90 Minute IPA are:')
 # print(get_recommendation('90 Minute IPA', 20))
 
-top_20_rated = all_three_2.groupby('beer_name').count().sort_values(by= 'username', ascending = False)[0:20].index.tolist()
-top_20_rated = set(top_20_rated)
+top_300_rated = all_three_2.groupby('beer_name').count().sort_values(by= 'username', ascending = False)[0:300].index.tolist()
+top_300_rated = set(top_300_rated)
 
-top_20_scores = all_three_2.groupby('beer_name').mean().sort_values(by='score', ascending = False)[0:20].index.tolist()
-top_20_scores = set(top_20_scores)
+top_300_scores = all_three_2.groupby('beer_name').mean().sort_values(by='score', ascending = False)[0:300].index.tolist()
+top_300_scores = set(top_300_scores)
 
-dfh90 = set(get_recommendation('90 Minute IPA', 20))
-gmviet = set(get_recommendation('Good Morning', 20))
-kbbs = set(get_recommendation('Kentucky Brunch Brand Stout', 20))
-tha = set(get_recommendation('Two Hearted Ale', 20))
+heady= set(get_recommendation('Heady Topper', 50))
+heady1= set(get_recommendation1('Heady Topper', 50))
+heady2 = set(get_recommendation2('Heady Topper', 50))
 
-ebi = set(get_recommendation('Enjoy By IPA', 20))
+#Below would show where the three different types of recommender metrics intersect with\
+#the top 300 beers in both ratings and scores
+'''
+print(heady.intersection(top_300_rated))
+print(heady.intersection(top_300_scores))
+
+print(heady1.intersection(top_300_rated))
+print(heady1.intersection(top_300_scores))
+
+print(heady2.intersection(top_300_rated))
+print(heady2.intersection(top_300_scores))
+
+print(top_300_rated.intersection(top_300_scores))
+'''
+
+
 # print('The 20 nearest neighbors of Enjoy By IPA:')
 # print(ebi)
+#Cosine Similarity Method
+A = set(get_recommendation('Heady Topper', 300))
+
+#Pearson Baseline method
+B = set(get_recommendation1('Heady Topper',300))
+
+#MSD Method
+C = set(get_recommendation2('Heady Topper', 300))
+
+#This would show any intersection between the three different selection metrics
+
+print('common beers: {}'.format(A.intersection(B,C)))
+print('number of common beers: {}'.format(len(A.intersection(B,C))))
 
 
+###################
+#From here down, this code is for using a different model, one
+#that I ended up not using at all. I would like to put it back in
+#at a later time, when i've got all the things set for latent factors
 
+'''
 all_three_2_pivot = all_three_2.pivot_table(index = 'username', columns = 'beer_name', values= 'score').fillna(0)
 
 Transposed = all_three_2_pivot.values.T
@@ -300,11 +488,13 @@ Transposed = all_three_2_pivot.values.T
 
 def explained_vary(list_n_components):
     
-    '''
-    input = list of integers
-    output = list of tuples showing n_components and it's explained 
-    variance ratio
-    '''
+    
+    
+    # input = list of integers
+    # output = list of tuples showing n_components and it's explained 
+    # variance ratio
+    
+
 
     out= []
     
@@ -339,13 +529,13 @@ beer_rec_list_400 = list(beer_rec_names_400)
 
 def svd_400_recomm(string, n):
     
-    '''
-    function that returns top n-num of recommendations
-    based on input of beer name and n
+    
+    # function that returns top n-num of recommendations
+    # based on input of beer name and n
 
-    inputs: string(name of beer) --> string
-            n (num recommendations) --> int
-    '''
+    # inputs: string(name of beer) --> string
+    #         n (num recommendations) --> int
+    
 
     #we have to get the index of the beer name form list of
     #all beers in the training data
@@ -375,12 +565,17 @@ B = set(get_recommendation('Enjoy By IPA', 50))
 print('common beers: {}'.format(A.intersection(B)))
 print('number of common beers: {}'.format(len(A.intersection(B))))
 
+'''
 def compare_recomm(name_list, n):
     results = []
     for idx, name in enumerate(name_list):
-        svd = set(svd_400_recomm(name, n))
         knn = set(get_recommendation(name, n))
-        common = len(svd.intersection(knn))
+        knn1 = set(get_recommendation1(name, n))
+        #knn2 = set(get_recommendation2(name, n))
+        #knn3 = set(get_recommendation3(name, n))
+        common = len(knn.intersection(knn1))
+        #common1 = len(knn2.intersection(knn))
+        #common2 = len(common.intersection(common1))
         tup = (idx, common)
         results.append(tup)
 
@@ -395,7 +590,7 @@ def compare_recomm(name_list, n):
 grouped = all_three_2.groupby('beer_name')
 namelist= grouped.mean().sort_values(by= 'score', ascending=False)[::40].index.tolist()
 
-print(compare_recomm(namelist, 100))
+print(compare_recomm(namelist, 300))
 
 
 
