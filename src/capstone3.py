@@ -142,14 +142,14 @@ df1 = all_three_1[~all_three_1.beer_name.isin(subpar_beers_list)]
 df2 = df1[~df1.beer_name.isin(low_ratings_list)]
 all_three_2 = copy.deepcopy(df2)
 
-# print(all_three_2.info())
+all_three_3 = all_three_2.reset_index()
 
 # print('Original number of unique beers: {}'.format(len(all_three_1.beer_name.unique())))
 # print('Revised number of unique beers: {}'.format(len(all_three_2.beer_name.unique())))
 
 
 #creating a new beerID for each beer
-grouped_name = all_three_2.groupby('beer_name')
+grouped_name = all_three_3.groupby('beer_name')
 temp_df = grouped_name.count()
 temp_df_idx = pd.DataFrame(temp_df.index)
 
@@ -159,10 +159,10 @@ dict_df = temp_df_idx[['beerID', 'beer_name']]
 desc_dict = dict_df.set_index('beer_name').to_dict()
 new_dict = desc_dict['beerID']
 
-all_three_2['beerID']= all_three_2.beer_name.map(new_dict)
+all_three_3['beerID']= all_three_3.beer_name.map(new_dict)
 
 #creating a new userID for each user
-grouped_user = all_three_2.groupby('username')
+grouped_user = all_three_3.groupby('username')
 
 temp_df_user = grouped_user.count()
 temp_df_user_idx = pd.DataFrame(temp_df_user.index)
@@ -173,10 +173,14 @@ dict_df_user = temp_df_user_idx[['userID', 'username']]
 desc_dict_user = dict_df_user.set_index('username').to_dict()
 new_dict_user = desc_dict_user['userID']
 
-all_three_2['userID'] = all_three_2.username.map(new_dict_user)
+all_three_3['userID'] = all_three_3.username.map(new_dict_user)
+
+
+all_three_3 = all_three_3.drop(columns=['index'],axis=1)
 
 # print(all_three_2.iloc[0].beer_name)
 # print(all_three_2.iloc[0].username)
+
 
 def read_item_name():
     # two maps to convert raw ids into beer names and vice versa
@@ -186,7 +190,7 @@ def read_item_name():
     name_to_raw_id = {}
 
     #there were 13274 unique beers after removing those w/ low rating and review counts
-    unique_beers = len(all_three_2.beer_name.unique())
+    unique_beers = len(all_three_3.beer_name.unique())
     for i in range (unique_beers):
         line = file_name.iloc[i]
         raw_id_to_name[line[0]] = line[1]
@@ -196,7 +200,7 @@ def read_item_name():
     
 
 
-#This first one is set to compute the cosine distance
+#This first one is set to compute the pearon_baseline
 
 def get_recommendation(beer_name, k_):
     
@@ -234,28 +238,30 @@ def get_recommendation(beer_name, k_):
 
 #This would compute the cosine distance
 reader= Reader(rating_scale=(1,5))
-data= Dataset.load_from_df(all_three_2[['userID', 'beerID', 'score']],reader)
+data= Dataset.load_from_df(all_three_3[['userID', 'beerID', 'score']],reader)
 trainset, testset = train_test_split(data, test_size = .20)
 
 trainset = data.build_full_trainset()
-sim_options = {'name':'cosine', 'user_based': False}
+sim_options = {'name':'pearson_baseline', 'user_based': False}
 algo= KNNBaseline(sim_options = sim_options)
 algo.fit(trainset)
 predictions = algo.test(testset)
 accuracy.rmse(predictions)
 
 
-#this is the function that will use Pearson-baseline
+#this is the function that will use cosine similarity
 
 def get_recommendation1(beer_name, k_):
-    
+
+
     '''
     input a beer and get k-num recommendations
        that are based on similarity
 
        input = string, int
        output = string
-    ''' 
+    '''
+
 
     output = []
     beer = str(beer_name)
@@ -281,13 +287,15 @@ def get_recommendation1(beer_name, k_):
 
     return output
 
-#This is for the pearson-baseline
+
+
+#This is for the cosine similarity
 reader= Reader(rating_scale=(1,5))
-data= Dataset.load_from_df(all_three_2[['userID', 'beerID', 'score']],reader)
+data= Dataset.load_from_df(all_three_3[['userID', 'beerID', 'score']],reader)
 trainset, testset = train_test_split(data, test_size = .20)
 
 trainset = data.build_full_trainset()
-sim_options = {'name':'pearson_baseline', 'user_based': False}
+sim_options = {'name':'cosine', 'user_based': False}
 algo1= KNNBaseline(sim_options = sim_options)
 algo1.fit(trainset)
 predictions1 = algo1.test(testset)
@@ -295,19 +303,21 @@ accuracy.rmse(predictions1)
 
 
 
-
+'''
 #this one will use KNN with MSD
 
 def get_recommendation2(beer_name, k_):
-    
-    '''
+'''
+
+'''
     input a beer and get k-num recommendations
        that are based on similarity
 
        input = string, int
        output = string
-    ''' 
+''' 
 
+'''
     output = []
     beer = str(beer_name)
     
@@ -344,7 +354,7 @@ algo2= KNNBaseline(sim_options = sim_options)
 algo2.fit(trainset)
 predictions2 = algo2.test(testset)
 accuracy.rmse(predictions2)
-
+'''
 
 
 
@@ -410,69 +420,119 @@ accuracy.rmse(predictions2)
 #     algo_model = pickle.load(m)
 
 
+from collections import defaultdict
 
+def get_top_n(predictions, n=5):
+    """Return the top-N recommendation for each user from a set of predictions.
+
+    Args:
+        predictions(list of Prediction objects): The list of predictions, as
+            returned by the test method of an algorithm.
+        n(int): The number of recommendation to output for each user. Default
+            is 10.
+    Returns:
+    A dict where keys are user (raw) ids and values are lists of tuples:
+        [(raw item id, rating estimation), ...] of size n.
+    """
+    
+    # First map the predictions to each user.
+    top_n = defaultdict(list)
+    for uid, iid, true_r, est, _ in predictions:
+        top_n[uid].append((iid, est))
+
+    # Then sort the predictions for each user and retrieve the k highest ones.
+    for uid, user_ratings in top_n.items():
+        user_ratings.sort(key=lambda x: x[1], reverse=True)
+        top_n[uid] = user_ratings[:n]
+
+    return top_n
+
+# reader= Reader(rating_scale=(1,5))
+# # First train an knn baseline algorithm on the beer dataset.
+# data = Dataset.load_from_df(all_three_3[['userID', 'beerID', 'score']], reader)
+# trainset1 = data.build_full_trainset()
+# sim_options= {'name':'pearson_baseline', 'user_based': False}
+# algoPB = KNNBaseline(sim_options=sim_options)
+# algoPB.fit(trainset1)
+
+Then predict ratings for all pairs (u, i) that are NOT in the training set.
+testset = trainset.build_anti_testset()
+predictionsPB = algoPB.test(testset)
+
+accuracy.rmse(predictions2)
+top_n = get_top_n(predictionsPB, n=5)
+
+
+print(top_n[:10]))
+#########Print the recommended items for each user##############
+# for uid, user_ratings in top_n.items():
+#     print(list(uid, [iid for (iid, _) in user_ratings])
+
+############ the above is too big to compute, it keeps crashing my computer
 ############
 
 
 #top 20 most rated beers
-grouped_beer_names = all_three_2.groupby('beer_name')
+grouped_beer_names = all_three_3.groupby('beer_name')
 grouped_beer_names.count().sort_values(by='username', ascending= False)[0:20].index.tolist()
 
 # #top 20 highest rated beers
 grouped_beer_names.mean().sort_values(by='score', ascending = False)[0:20].index.tolist()
 
 #This is to show the top 20 recommendations for the beer based on the different models
-print('The 15 nearest neighbors of Heady Topper are:')
+print('The 10 nearest neighbors of Heady Topper are:')
 print(get_recommendation('Heady Topper', 5))
 print(get_recommendation1('Heady Topper', 5))
-print(get_recommendation2('Heady Topper', 5))
+# print(get_recommendation2('Heady Topper', 5))
 #print(get_recommendation3('Heady Topper', 20))
 
 
 # print('The 20 nearest neighbor to 90 Minute IPA are:')
 # print(get_recommendation('90 Minute IPA', 20))
 
-top_300_rated = all_three_2.groupby('beer_name').count().sort_values(by= 'username', ascending = False)[0:300].index.tolist()
+top_300_rated = all_three_3.groupby('beer_name').count().sort_values(by= 'username', ascending = False)[0:300].index.tolist()
 top_300_rated = set(top_300_rated)
 
-top_300_scores = all_three_2.groupby('beer_name').mean().sort_values(by='score', ascending = False)[0:300].index.tolist()
+top_300_scores = all_three_3.groupby('beer_name').mean().sort_values(by='score', ascending = False)[0:300].index.tolist()
 top_300_scores = set(top_300_scores)
 
 heady= set(get_recommendation('Heady Topper', 50))
 heady1= set(get_recommendation1('Heady Topper', 50))
-heady2 = set(get_recommendation2('Heady Topper', 50))
+# heady2 = set(get_recommendation2('Heady Topper', 50))
 
 #Below would show where the three different types of recommender metrics intersect with\
 #the top 300 beers in both ratings and scores
-'''
+
 print(heady.intersection(top_300_rated))
 print(heady.intersection(top_300_scores))
 
 print(heady1.intersection(top_300_rated))
 print(heady1.intersection(top_300_scores))
 
+'''
 print(heady2.intersection(top_300_rated))
 print(heady2.intersection(top_300_scores))
+'''
 
 print(top_300_rated.intersection(top_300_scores))
-'''
+
 
 
 # print('The 20 nearest neighbors of Enjoy By IPA:')
 # print(ebi)
-#Cosine Similarity Method
+#Pearson Baselline Method
 A = set(get_recommendation('Heady Topper', 300))
 
-#Pearson Baseline method
+#Cosine Similarity method
 B = set(get_recommendation1('Heady Topper',300))
 
 #MSD Method
-C = set(get_recommendation2('Heady Topper', 300))
+#C = set(get_recommendation2('Heady Topper', 300))
 
 #This would show any intersection between the three different selection metrics
 
-print('common beers: {}'.format(A.intersection(B,C)))
-print('number of common beers: {}'.format(len(A.intersection(B,C))))
+print('common beers: {}'.format(A.intersection(B)))
+print('number of common beers: {}'.format(len(A.intersection(B))))
 
 
 ###################
@@ -587,7 +647,7 @@ def compare_recomm(name_list, n):
 
 
 #select every 40 beers from the highest avg rating to lowest avg rating
-grouped = all_three_2.groupby('beer_name')
+grouped = all_three_3.groupby('beer_name')
 namelist= grouped.mean().sort_values(by= 'score', ascending=False)[::40].index.tolist()
 
 print(compare_recomm(namelist, 300))
