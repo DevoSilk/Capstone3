@@ -455,7 +455,9 @@ def get_top_n(predictions, n=5):
 # algoPB = KNNBaseline(sim_options=sim_options)
 # algoPB.fit(trainset1)
 
-Then predict ratings for all pairs (u, i) that are NOT in the training set.
+#Then predict ratings for all pairs (u, i) that are NOT in the training set.
+
+'''
 testset = trainset.build_anti_testset()
 predictionsPB = algoPB.test(testset)
 
@@ -464,6 +466,8 @@ top_n = get_top_n(predictionsPB, n=5)
 
 
 print(top_n[:10]))
+'''
+
 #########Print the recommended items for each user##############
 # for uid, user_ratings in top_n.items():
 #     print(list(uid, [iid for (iid, _) in user_ratings])
